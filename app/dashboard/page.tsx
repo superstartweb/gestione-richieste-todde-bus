@@ -3,215 +3,177 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { Calendar, Clock, FileText, LogOut, LayoutDashboard, ChevronRight } from 'lucide-react'
 
 export default function Dashboard() {
-  const [user, setUser] = useState<{nome: string, id: string, is_admin: boolean} | null>(null)
+  const [user, setUser] = useState<any>(null)
   const [tipo, setTipo] = useState('')
   const [loading, setLoading] = useState(false)
   const [messaggio, setMessaggio] = useState('')
+  const [mieRichieste, setMieRichieste] = useState<any[]>([])
   const [file, setFile] = useState<File | null>(null)
   const supabase = createClient()
   const router = useRouter()
 
   const [formData, setFormData] = useState({
-    data_inizio: '',
-    data_fine: '',
-    ora_inizio: '',
-    ora_fine: '',
-    note: ''
+    data_inizio: '', data_fine: '', ora_inizio: '', ora_fine: '', note: ''
   })
 
   useEffect(() => {
     const email = localStorage.getItem('user_email')
-    const nome = localStorage.getItem('user_nome')
-    const id = localStorage.getItem('user_id')
-    const isAdmin = localStorage.getItem('is_admin') === 'true'
-    
-    if (!email) {
-      router.push('/')
-    } else {
-      setUser({ nome: nome || '', id: id || '', is_admin: isAdmin })
-    }
+    if (!email) { router.push('/'); return }
+    setUser({ nome: localStorage.getItem('user_nome'), id: localStorage.getItem('user_id'), is_admin: localStorage.getItem('is_admin') === 'true' })
+    fetchMieRichieste()
   }, [router])
 
-  const handleLogout = () => {
-    localStorage.clear()
-    router.push('/')
+  const fetchMieRichieste = async () => {
+    const id = localStorage.getItem('user_id')
+    const { data } = await supabase.from('richieste').select('*').eq('dipendente_id', id).order('created_at', { ascending: false })
+    setMieRichieste(data || [])
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     let fileUrl = null
-
     try {
       if (file) {
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${Date.now()}.${fileExt}`
-        const { error: uploadError } = await supabase.storage
-          .from('allegati')
-          .upload(fileName, file)
-        
-        if (uploadError) throw new Error("Errore caricamento file: " + uploadError.message)
-
-        const { data: publicUrl } = supabase.storage.from('allegati').getPublicUrl(fileName)
-        fileUrl = publicUrl.publicUrl
+        const fileName = `${Date.now()}_${file.name}`
+        await supabase.storage.from('allegati').upload(fileName, file)
+        const { data } = supabase.storage.from('allegati').getPublicUrl(fileName)
+        fileUrl = data.publicUrl
       }
-
-      const { error: dbError } = await supabase.from('richieste').insert([{
-        dipendente_id: user?.id,
-        tipo_richiesta: tipo,
-        data_inizio: formData.data_inizio || null,
-        data_fine: tipo === 'PERMESSO' ? formData.data_inizio : (formData.data_fine || null),
-        ora_inizio: tipo === 'PERMESSO' ? formData.ora_inizio : null,
-        ora_fine: tipo === 'PERMESSO' ? formData.ora_fine : null,
-        allegato_url: fileUrl,
-        note: formData.note || '',
-        stato: 'PENDENTE',
-        status: 'pending'
+      await supabase.from('richieste').insert([{
+        dipendente_id: user?.id, tipo_richiesta: tipo, ...formData,
+        data_fine: tipo === 'PERMESSO' ? formData.data_inizio : formData.data_fine,
+        allegato_url: fileUrl, stato: 'PENDENTE'
       }])
-
-      if (dbError) throw dbError
-
-      setMessaggio("Richiesta inviata! L'amministratore la riceverà a breve.")
-      setTipo('')
-      setFile(null)
-      setFormData({ data_inizio: '', data_fine: '', ora_inizio: '', ora_fine: '', note: '' })
-
-    } catch (err: any) {
-      alert("ERRORE: " + err.message)
-    } finally {
-      setLoading(false)
-    }
+      setMessaggio("Richiesta inviata correttamente!")
+      setTipo(''); setFile(null); fetchMieRichieste()
+    } catch (err) { alert("Errore") }
+    setLoading(false)
   }
 
-  if (!user) return <div className="p-10 text-black font-bold text-center">Inizializzazione...</div>
+  if (!user) return <div className="p-20 text-center font-bold">Caricamento...</div>
 
   return (
-    <main className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
-      <div className="max-w-xl mx-auto">
+    <main className="min-h-screen bg-[#f8fafc] text-[#1e293b] font-sans">
+      <div className="max-w-4xl mx-auto p-4 md:p-8">
         
-        {/* HEADER CON TASTI NAVIGAZIONE */}
-        <div className="flex justify-between items-start mb-6 bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-          <div>
-            <h1 className="text-xl font-black text-gray-900 leading-none">Ciao {user.nome},</h1>
-            <p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Modulo Richieste</p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <button 
-                onClick={handleLogout}
-                className="text-[10px] font-black bg-gray-100 hover:bg-red-50 hover:text-red-600 px-4 py-1.5 rounded-full transition-all uppercase"
-            >
-              Esci
-            </button>
-            {user.is_admin && (
-                <Link 
-                    href="/admin" 
-                    className="text-[10px] font-black bg-purple-100 text-purple-600 px-4 py-1.5 rounded-full hover:bg-purple-600 hover:text-white transition-all uppercase"
-                >
-                    Pannello Admin →
-                </Link>
-            )}
-          </div>
-        </div>
-
-        {/* MODULO RICHIESTA */}
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
-          {messaggio ? (
-            <div className="bg-green-50 border-2 border-green-100 p-10 rounded-[2rem] text-center animate-in zoom-in duration-300">
-              <span className="text-6xl block mb-4">✅</span>
-              <p className="text-green-700 font-black text-xl mb-6">{messaggio}</p>
-              <button 
-                onClick={() => setMessaggio('')} 
-                className="bg-green-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-green-100 hover:scale-105 transition-all"
-              >
-                Nuova Richiesta
-              </button>
+        {/* HEADER PROFESSIONALE */}
+        <header className="flex justify-between items-center mb-10 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-blue-100">
+              {user.nome.charAt(0)}
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 ml-1">Tipo di richiesta</label>
-                <select 
-                  required 
-                  className="w-full p-4 border-2 border-gray-50 rounded-2xl bg-gray-50 font-bold text-lg focus:border-blue-500 outline-none transition-all cursor-pointer"
-                  value={tipo} 
-                  onChange={(e) => setTipo(e.target.value)}
-                >
-                  <option value="">Scegli opzione...</option>
-                  <option value="FERIE">🌴 FERIE</option>
-                  <option value="PERMESSO">🕒 PERMESSO</option>
-                  <option value="MALATTIA">🤒 MALATTIA</option>
-                  <option value="CONGEDO PARENTALE">👶 CONGEDO</option>
-                  <option value="LUTTO">🖤 LUTTO</option>
-                </select>
-              </div>
+            <div>
+              <h1 className="text-xl font-black leading-none">Ciao, {user.nome}</h1>
+              <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Pannello Dipendente</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {user.is_admin && <button onClick={() => router.push('/admin')} className="p-3 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-all" title="Admin"><LayoutDashboard size={20}/></button>}
+            <button onClick={() => { localStorage.clear(); router.push('/') }} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all" title="Esci"><LogOut size={20}/></button>
+          </div>
+        </header>
 
-              {tipo && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  
-                  {/* DATE DENTRO BOX GRIGIO */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50/50 p-3 rounded-2xl border border-gray-100">
-                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{tipo === 'PERMESSO' ? 'Giorno' : 'Dal giorno'}</label>
-                      <input type="date" required className="w-full bg-transparent font-bold outline-none" value={formData.data_inizio} onChange={e => setFormData({...formData, data_inizio: e.target.value})} />
-                    </div>
-                    {tipo !== 'PERMESSO' && (
-                      <div className="bg-gray-50/50 p-3 rounded-2xl border border-gray-100">
-                        <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Al giorno</label>
-                        <input type="date" required className="w-full bg-transparent font-bold outline-none" value={formData.data_fine} onChange={e => setFormData({...formData, data_fine: e.target.value})} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ORE (SOLO PER PERMESSO) */}
-                  {tipo === 'PERMESSO' && (
-                    <div className="grid grid-cols-2 gap-4 bg-blue-50/50 p-4 rounded-3xl border border-blue-100">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-blue-400 mb-1">Dalle ore</label>
-                        <input type="time" required className="w-full bg-transparent font-black text-blue-600 outline-none" value={formData.ora_inizio} onChange={e => setFormData({...formData, ora_inizio: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-blue-400 mb-1">Alle ore</label>
-                        <input type="time" required className="w-full bg-transparent font-black text-blue-600 outline-none" value={formData.ora_fine} onChange={e => setFormData({...formData, ora_fine: e.target.value})} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ALLEGATO */}
-                  {(tipo === 'MALATTIA' || tipo === 'CONGEDO PARENTALE') && (
-                    <div className="p-5 border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50/30">
-                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-3">Carica Certificato (Immagine o PDF)</label>
-                      <input 
-                        type="file" 
-                        className="text-xs w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" 
-                        onChange={e => setFile(e.target.files?.[0] || null)} 
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1 ml-1">Note aggiuntive</label>
-                    <textarea 
-                        className="w-full p-4 border-2 border-gray-50 rounded-2xl bg-gray-50 outline-none focus:border-blue-500 transition-all" 
-                        rows={3} 
-                        placeholder="Inserisci eventuali dettagli o motivi..." 
-                        value={formData.note} 
-                        onChange={e => setFormData({...formData, note: e.target.value})} 
-                    />
-                  </div>
-
-                  <button 
-                    disabled={loading} 
-                    className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-lg shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all disabled:bg-gray-300"
-                  >
-                    {loading ? 'INVIO IN CORSO...' : 'INVIA RICHIESTA'}
-                  </button>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          
+          {/* COLONNA SINISTRA: FORM */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+              <h2 className="text-lg font-black mb-6 flex items-center gap-2"><FileText size={20} className="text-blue-600"/> Nuova Richiesta</h2>
+              
+              {messaggio ? (
+                <div className="bg-green-50 p-6 rounded-2xl text-center border border-green-100">
+                  <p className="text-green-700 font-bold mb-4">{messaggio}</p>
+                  <button onClick={() => setMessaggio('')} className="bg-green-600 text-white px-6 py-2 rounded-xl font-bold text-xs uppercase">Invia un'altra</button>
                 </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <select required className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold text-sm" value={tipo} onChange={e => setTipo(e.target.value)}>
+                    <option value="">Tipo Assenza...</option>
+                    <option value="FERIE">🌴 FERIE</option>
+                    <option value="PERMESSO">🕒 PERMESSO</option>
+                    <option value="MALATTIA">🤒 MALATTIA</option>
+                    <option value="CONGEDO PARENTALE">👶 CONGEDO</option>
+                  </select>
+
+                  {tipo && (
+                    <div className="space-y-4 animate-in fade-in">
+                      <div className="grid grid-cols-1 gap-3">
+                        <div className="bg-slate-50 p-3 rounded-2xl">
+                          <label className="text-[10px] font-black text-slate-400 uppercase">{tipo === 'PERMESSO' ? 'Giorno' : 'Inizio'}</label>
+                          <input type="date" required className="w-full bg-transparent font-bold outline-none" onChange={e => setFormData({...formData, data_inizio: e.target.value})} />
+                        </div>
+                        {tipo !== 'PERMESSO' && (
+                          <div className="bg-slate-50 p-3 rounded-2xl">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Fine</label>
+                            <input type="date" required className="w-full bg-transparent font-bold outline-none" onChange={e => setFormData({...formData, data_fine: e.target.value})} />
+                          </div>
+                        )}
+                      </div>
+
+                      {tipo === 'PERMESSO' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-blue-50 p-3 rounded-2xl">
+                            <label className="text-[10px] font-black text-blue-400 uppercase">Dalle</label>
+                            <input type="time" required className="w-full bg-transparent font-bold text-blue-600 outline-none" onChange={e => setFormData({...formData, ora_inizio: e.target.value})} />
+                          </div>
+                          <div className="bg-blue-50 p-3 rounded-2xl">
+                            <label className="text-[10px] font-black text-blue-400 uppercase">Alle</label>
+                            <input type="time" required className="w-full bg-transparent font-bold text-blue-600 outline-none" onChange={e => setFormData({...formData, ora_fine: e.target.value})} />
+                          </div>
+                        </div>
+                      )}
+
+                      {(tipo === 'MALATTIA' || tipo === 'CONGEDO PARENTALE') && (
+                        <div className="p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                          <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Allega Documento</label>
+                          <input type="file" className="text-[10px] w-full" onChange={e => setFile(e.target.files?.[0] || null)} />
+                        </div>
+                      )}
+
+                      <button disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">
+                        {loading ? 'INVIO...' : 'INVIA RICHIESTA'}
+                      </button>
+                    </div>
+                  )}
+                </form>
               )}
-            </form>
-          )}
+            </div>
+          </div>
+
+          {/* COLONNA DESTRA: STORICO */}
+          <div className="lg:col-span-3 space-y-6">
+            <h2 className="text-lg font-black flex items-center gap-2 px-2"><Clock size={20} className="text-slate-400"/> Storico Richieste</h2>
+            <div className="grid gap-3">
+              {mieRichieste.map(r => (
+                <div key={r.id} className="bg-white p-5 rounded-3xl border border-slate-200 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-4">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-lg ${
+                      r.stato === 'APPROVATA' ? 'bg-green-100 text-green-600' : r.stato === 'RIFIUTATA' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'
+                    }`}>
+                      {r.tipo_richiesta === 'FERIE' ? '🌴' : r.tipo_richiesta === 'MALATTIA' ? '🤒' : '🕒'}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{r.data_inizio} {r.data_fine && r.data_fine !== r.data_inizio ? ` - ${r.data_fine}` : ''}</p>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{r.tipo_richiesta}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-tighter ${
+                      r.stato === 'APPROVATA' ? 'bg-green-500 text-white' : r.stato === 'RIFIUTATA' ? 'bg-red-500 text-white' : 'bg-yellow-400 text-white animate-pulse'
+                    }`}>
+                      {r.stato}
+                    </span>
+                    <ChevronRight size={16} className="text-slate-300"/>
+                  </div>
+                </div>
+              ))}
+              {mieRichieste.length === 0 && <p className="text-center p-10 text-slate-300 italic text-sm">Nessuna richiesta inviata.</p>}
+            </div>
+          </div>
         </div>
       </div>
     </main>
