@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'; // LA PAROLINA MAGICA
+
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -7,10 +9,9 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // Una query semplicissima che non consuma dati
-  const { data, error } = await supabase.from('dipendenti').select('id').limit(1)
+  const { error } = await supabase.from('dipendenti').select('id').limit(1)
 
-  if (error) return NextResponse.json({ status: 'error', message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   
-  return NextResponse.json({ status: 'awake', time: new Date().toISOString() })
+  return NextResponse.json({ status: "Sveglio!", timestamp: new Date().toISOString() })
 }
